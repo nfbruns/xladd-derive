@@ -29,7 +29,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
     let prefix = if let Some(v) = params.get("prefix") { v } else { "xl" };
     let rename = if let Some(v) = params.get("rename") { v } else { name.as_str() };
     let async_function = if let Some(_) = params.get("async") { true } else { false };
-    let single_threaded = if let Some(_) = params.get("single_threaded") { true } else { true };
+    let single_threaded = if let Some(_) = params.get("single_threaded") { true } else { false };
     // Use `quote` to convert the syntax tree back into tokens so we can return them. Note
     // that the tokens we're returning at this point are still just the input, we've simply
     // converted it between a few different forms.
