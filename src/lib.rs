@@ -94,7 +94,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                                         let segment = &p.path.segments[0];
                                         let ident = &segment.ident;
                                         quote!( 
-                                                if #arg_name.is_missing_or_null() {
+                                                if #arg_name.is_missing() {
                                                     return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
                                                 }
                                                 let #arg_name = std::convert::TryInto::<Vec<#ident>>::try_into(&#arg_name)?;
@@ -109,7 +109,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                                                 let segment = &p.path.segments[0];
                                                 let ident = &segment.ident;
                                                 if ident == "str" {
-                                                    quote!( if #arg_name.is_missing_or_null() {
+                                                    quote!( if #arg_name.is_missing() {
                                                                 return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
                                                             }
                                                             let #arg_name = std::convert::TryInto::<Vec<String>>::try_into(&#arg_name)?;
@@ -132,7 +132,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                                 let ident = &segment.ident;
                                 if ident == "str" { 
                                     quote!(
-                                        if #arg_name.is_missing_or_null() {
+                                        if #arg_name.is_missing() {
                                             return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
                                         }
                                         let #arg_name = std::convert::TryInto::<String>::try_into(&#arg_name)?;
@@ -141,7 +141,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                                     )
                                 } else { 
                                     quote!(
-                                        if #arg_name.is_missing_or_null() {
+                                        if #arg_name.is_missing() {
                                             return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
                                         }
                                         let #arg_name = std::convert::TryInto::<#ident>::try_into(&#arg_name)?;
