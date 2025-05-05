@@ -281,9 +281,6 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
             ""
         };
 
-    println!("Args: {:?}", args);
-    println!("Ret: {:?}", ret);
-
     // Return type convert back to variant
     let output = {
         match output {
@@ -383,7 +380,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
         .clone()
         .map(|(name, _)| name.to_string())
         .collect::<Vec<_>>()
-        .join(",");
+        .join(", ");
     let mut q_args = typed_args
         .clone()
         .map(|(_, _)| "Q")
@@ -410,9 +407,6 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
         .collect::<Vec<_>>();
 
         let xl_function_str = xl_function.to_string();
-
-
-    println!("Results {}, {}, {}, {}, {}, {:?}",xl_function_str, q_args,caller_args_str,category,docs_ret, args);
 
     // Async function
     if async_function {
