@@ -256,6 +256,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
             })
         })
         .collect::<Vec<_>>();
+
     let ret = comments.clone().find_map(|v| {
         if v.starts_with("= \" * ret -") {
             let v = &v[12..v.len() - 1];
@@ -273,19 +274,16 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
         }
     });
 
-    let docs_ret = vec![
-        if ret.is_some() {
-            ret.as_ref().unwrap()
-        } else {
-            ""
-        },
+    let docs_ret = 
         if docs.is_some() {
             docs.as_ref().unwrap()
         } else {
             ""
-        },
-    ]
-    .join(" and ");
+        };
+
+    println!("Args: {:?}", args);
+    println!("Ret: {:?}", ret);
+
     // Return type convert back to variant
     let output = {
         match output {
@@ -412,6 +410,10 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
         .collect::<Vec<_>>();
 
         let xl_function_str = xl_function.to_string();
+
+
+    println!("Results {}, {}, {}, {}, {}, {:?}",xl_function_str, q_args,caller_args_str,category,docs_ret, args);
+
     // Async function
     if async_function {
         let wrapper = quote! {
@@ -497,6 +499,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
             }
 
             pub (crate) fn #register_function(reg: &xladd::registrator::Reg) {
+                
                 reg.add(#xl_function_str,#q_args,#caller_args_str,#category,#docs_ret,&[#(#args),*]);
             }
             // User function
