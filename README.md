@@ -177,7 +177,7 @@ Excel calls this function in your .dll when it starts. The macro generates the r
 
     // For excel to register this XLL ensure `no_mangle` is specified 
     #[no_mangle]
-    pub extern "stdcall" fn xlAutoOpen() -> i32 {
+    pub extern "system" fn xlAutoOpen() -> i32 {
         let reg = Reg::new();
         register_add(&reg);
         1 // Must return 1 to signal to excel SUCCESS

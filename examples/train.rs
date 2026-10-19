@@ -52,7 +52,7 @@ fn add_f64_2(a: Array2<f64>) -> Result<Array2<f64>, Box<dyn std::error::Error>> 
 
 // Don't forget to register your functions
 #[unsafe(no_mangle)]
-pub extern "stdcall" fn xlAutoOpen() -> i32 {
+pub extern "system" fn xlAutoOpen() -> i32 {
     let r = Reg::new();
     #[cfg(feature = "use_ndarray")]
     register_add_f64_2(&r);

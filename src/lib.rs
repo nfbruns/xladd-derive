@@ -322,7 +322,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
             }
             // Excel function
             #[unsafe(no_mangle)]
-            extern "stdcall" fn #xl_function(#(#lpx_oper_args),* ,return_handle: xladd::xlcall::LPXLOPER12) {
+            extern "system" fn #xl_function(#(#lpx_oper_args),* ,return_handle: xladd::xlcall::LPXLOPER12) {
                 #(#to_variant)*
                 match #error_handler_function(#(#caller_args),*, return_handle) {
                     Ok(_) => (),
@@ -367,7 +367,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
             }
             // Excel function
             #[unsafe(no_mangle)]
-            extern "stdcall" fn #xl_function(#(#lpx_oper_args),*)  -> xladd::xlcall::LPXLOPER12 {
+            extern "system" fn #xl_function(#(#lpx_oper_args),*)  -> xladd::xlcall::LPXLOPER12 {
                 #(#to_variant)*
                 match #error_handler_function(#(#caller_args),*) {
                     Ok(v) => xladd::xlcall::LPXLOPER12::from(v),
