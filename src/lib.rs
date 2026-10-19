@@ -52,182 +52,60 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
     // f32,f64,i32,i64,bool,&str,&[&str],&[f64]
     // and map them to the corresponding owned types
 
+    // Optional arguments (Option<T>) are only allowed as the trailing arguments, following Excel's
+    // convention. An omitted argument or an empty cell is passed to the function as None
+    let mut seen_optional = false;
+    for arg in item.sig.inputs.iter() {
+        if let FnArg::Typed(typed_arg) = arg {
+            let optional = option_inner(&typed_arg.ty).is_some();
+            if seen_optional && !optional {
+                panic!("{}: Option<T> arguments must come after all required arguments", func);
+            }
+            seen_optional |= optional;
+        }
+    }
+
     let typed_args = &item.sig.inputs.iter().map(|arg| match arg {
         FnArg::Typed(typed_arg) => {
-            // Arg name
-            let arg_name = {
-                let pat = &typed_arg.pat;
-                match &**pat {
-                    syn::Pat::Ident(ident) => quote!(#ident),
-                    _ => panic!("Type not covered"),
-                }
-            };
+            let arg_name = arg_name(typed_arg);
             // Owned type
-            let owned_type = {
-                let ty = &typed_arg.ty;
-                match &**ty {
-                    syn::Type::Path(p) => {
-                        let segment = &p.path.segments[0];
-                        let ident = &segment.ident;
-                        let p_type = if ident == "str" {
-                            quote!(String)
+            let owned_type = match option_inner(&typed_arg.ty) {
+                Some(inner) => {
+                    let convert = owned_conversion(&arg_name, inner);
+                    quote!(
+                        let #arg_name = if #arg_name.is_missing_or_null() {
+                            log::trace!("{}:[None]",stringify!(#arg_name));
+                            None
                         } else {
-                            quote!(#p)
+                            Some({ #convert #arg_name })
                         };
-                        quote!( 
-                            if #arg_name.is_missing_or_null() {
-                                return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
-                            }
-                            let #arg_name = std::convert::TryInto::<#p_type>::try_into(&#arg_name)?; 
-                            log::trace!("{}:[{:?}]",stringify!(#arg_name),#arg_name);
-                        )
-                    }
-                    syn::Type::Reference(p) => {
-                        let elem = &p.elem;
-                        // Slice
-                        match &**elem {
-                            syn::Type::Slice(s) => {
-                                let elem = &s.elem;
-                                match &**elem {
-                                    syn::Type::Path(p) => {
-                                        let segment = &p.path.segments[0];
-                                        let ident = &segment.ident;
-                                        quote!( 
-                                                if #arg_name.is_missing() {
-                                                    return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
-                                                }
-                                                let #arg_name = std::convert::TryInto::<Vec<#ident>>::try_into(&#arg_name)?;
-                                                log::trace!("{}:[{:?}]",stringify!(#arg_name),#arg_name);
-                                                //let #arg_name = #arg_name.as_slice();
-                                        )
-                                    }
-                                    syn::Type::Reference(p) => {
-                                        let elem = &p.elem;
-                                        match &**elem {
-                                            syn::Type::Path(p) => {
-                                                let segment = &p.path.segments[0];
-                                                let ident = &segment.ident;
-                                                if ident == "str" {
-                                                    quote!( if #arg_name.is_missing() {
-                                                                return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
-                                                            }
-                                                            let #arg_name = std::convert::TryInto::<Vec<String>>::try_into(&#arg_name)?;
-                                                            let #arg_name = #arg_name.iter().map(AsRef::as_ref).collect::<Vec<_>>();
-                                                            log::trace!("{}:[{:?}]",stringify!(#arg_name),#arg_name);
-                                                            //let #arg_name = #arg_name.as_slice();
-                                                    )
-                                                } else {
-                                                    panic!("Only slices of &[&str] supported")
-                                                }
-                                            }
-                                            _ => panic!("Type not covered"),
-                                        }
-                                    }
-                                    _ => panic!("Type not covered"),
-                                }
-                            }
-                            syn::Type::Path(s) => {
-                                let segment = &s.path.segments[0];
-                                let ident = &segment.ident;
-                                if ident == "str" { 
-                                    quote!(
-                                        if #arg_name.is_missing() {
-                                            return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
-                                        }
-                                        let #arg_name = std::convert::TryInto::<String>::try_into(&#arg_name)?;
-                                        log::trace!("{}:[{:?}]",stringify!(#arg_name),#arg_name);
-                                       // let #arg_name = #arg_name.as_str();
-                                    )
-                                } else { 
-                                    quote!(
-                                        if #arg_name.is_missing() {
-                                            return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
-                                        }
-                                        let #arg_name = std::convert::TryInto::<#ident>::try_into(&#arg_name)?;
-                                        log::trace!("{}:[{:?}]",stringify!(#arg_name),#arg_name);
-                                        )
-                                    }
-                            }
-                            _ => panic!("Type not covered"),
+                    )
+                }
+                None => {
+                    let missing_check = missing_check(&typed_arg.ty);
+                    let convert = owned_conversion(&arg_name, &typed_arg.ty);
+                    quote!(
+                        if #arg_name.#missing_check() {
+                            return Err(Box::new(xladd::variant::XLAddError::MissingArgument(stringify!(#func).to_string(),stringify!(#arg_name).to_string())));
                         }
-
-                        // or Path
-                    }
-                    _ => panic!("Type not covered"),
+                        #convert
+                    )
                 }
             };
-            // Slice converted for &[&str],&[f64]
             (arg_name, owned_type)
         }
         FnArg::Receiver(_) => panic!("Free functions only"),
     });
 
-
     // Rerefence args
     let reference_args = &item.sig.inputs.iter().map(|arg| match arg {
         FnArg::Typed(typed_arg) => {
-            // Arg name
-            let arg_name = {
-                let pat = &typed_arg.pat;
-                match &**pat {
-                    syn::Pat::Ident(ident) => quote!(#ident),
-                    _ => panic!("Type not covered"),
-                }
+            let arg_name = arg_name(typed_arg);
+            let ref_type = match option_inner(&typed_arg.ty) {
+                Some(inner) => reference_conversion(&arg_name, inner, true),
+                None => reference_conversion(&arg_name, &typed_arg.ty, false),
             };
-            // Owned type
-            let owned_type = {
-                let ty = &typed_arg.ty;
-                match &**ty {
-                    syn::Type::Path(_) => {
-                        quote!()
-                    }
-                    syn::Type::Reference(p) => {
-                        let elem = &p.elem;
-                        // Slice
-                        match &**elem {
-                            syn::Type::Slice(s) => {
-                                let elem = &s.elem;
-                                match &**elem {
-                                    syn::Type::Path(_) => {
-                                        quote!( let #arg_name = #arg_name.as_slice(); )
-                                    }
-                                    syn::Type::Reference(p) => {
-                                        let elem = &p.elem;
-                                        match &**elem {
-                                            syn::Type::Path(p) => {
-                                                let segment = &p.path.segments[0];
-                                                let ident = &segment.ident;
-                                                if ident == "str" {
-                                                    quote!( let #arg_name = #arg_name.as_slice(); )
-                                                } else {
-                                                    panic!("Only slices of &[&str] supported")
-                                                }
-                                            }
-                                            _ => panic!("Type not covered"),
-                                        }
-                                    }
-                                    _ => panic!("Type not covered"),
-                                }
-                            }
-                            syn::Type::Path(s) => {
-                                let segment = &s.path.segments[0];
-                                let ident = &segment.ident;
-                                if ident == "str" { 
-                                    quote!(let #arg_name = #arg_name.as_str(); )
-                                } else { 
-                                    quote!()
-                                    }
-                            }
-                            _ => panic!("Type not covered"),
-                        }
-
-                        // or Path
-                    }
-                    _ => panic!("Type not covered"),
-                }
-            };
-            // Slice converted for &[&str],&[f64]
-            (arg_name, owned_type)
+            (arg_name, ref_type)
         }
         FnArg::Receiver(_) => panic!("Free functions only"),
     });
@@ -375,9 +253,17 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
         .clone()
         .map(|(name, _)| quote!(#name))
         .collect::<Vec<_>>();
-    let caller_args_str = typed_args
-        .clone()
-        .map(|(name, _)| name.to_string())
+    let caller_args_str = item
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            FnArg::Typed(typed_arg) if option_inner(&typed_arg.ty).is_some() => {
+                Some(format!("[{}]", arg_name(typed_arg)))
+            }
+            FnArg::Typed(typed_arg) => Some(arg_name(typed_arg).to_string()),
+            FnArg::Receiver(_) => None,
+        })
         .collect::<Vec<_>>()
         .join(", ");
     let mut q_args = typed_args
@@ -422,17 +308,17 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                             log::trace!("Results [{:?}]",v);
                             xladd::entrypoint::excel12(
                                                 xladd::xlcall::xlAsyncReturn,
-                                                &mut [Variant::from(raw_ptr), v]);
+                                                &mut [xladd::variant::Variant::from(raw_ptr), v]);
                         }
                         Err(e) => {
                             log::error!("Error {:?}",e.to_string());
                             xladd::entrypoint::excel12(
                                                 xladd::xlcall::xlAsyncReturn,
-                                                &mut [Variant::from(raw_ptr), Variant::from(e.to_string())]);
+                                                &mut [xladd::variant::Variant::from(raw_ptr), xladd::variant::Variant::from(e.to_string())]);
                         }
                     }
                 });
-                Ok(Variant::default())
+                Ok(xladd::variant::Variant::default())
             }
             // Excel function
             #[unsafe(no_mangle)]
@@ -501,4 +387,140 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
         };
     wrapper.into()
     }   
+}
+
+fn arg_name(typed_arg: &syn::PatType) -> proc_macro2::TokenStream {
+    match &*typed_arg.pat {
+        syn::Pat::Ident(ident) => quote!(#ident),
+        _ => panic!("Type not covered"),
+    }
+}
+
+/// Returns `T` if `ty` is `Option<T>`
+fn option_inner(ty: &syn::Type) -> Option<&syn::Type> {
+    let syn::Type::Path(p) = ty else { return None };
+    let segment = p.path.segments.last()?;
+    if segment.ident != "Option" {
+        return None;
+    }
+    match &segment.arguments {
+        syn::PathArguments::AngleBracketed(generic_args) => match generic_args.args.first() {
+            Some(syn::GenericArgument::Type(inner)) => {
+                if option_inner(inner).is_some() {
+                    panic!("Nested Option<Option<T>> arguments are not supported");
+                }
+                Some(inner)
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Check used to reject a missing required argument. Empty cells are allowed for reference types (&str, &[T])
+fn missing_check(ty: &syn::Type) -> proc_macro2::TokenStream {
+    match ty {
+        syn::Type::Reference(_) => quote!(is_missing),
+        _ => quote!(is_missing_or_null),
+    }
+}
+
+/// Statements converting the Variant `arg_name` into the owned Rust type backing `ty`
+/// f32,f64,i32,i64,bool,String,Vec<T>,Array2<T> are converted directly,
+/// &str -> String, &[T] -> Vec<T>, &[&str] -> Vec<String>
+fn owned_conversion(arg_name: &proc_macro2::TokenStream, ty: &syn::Type) -> proc_macro2::TokenStream {
+    let owned_type = match ty {
+        syn::Type::Path(p) => {
+            let segment = &p.path.segments[0];
+            let ident = &segment.ident;
+            if ident == "str" {
+                quote!(String)
+            } else {
+                quote!(#p)
+            }
+        }
+        syn::Type::Reference(p) => {
+            let elem = &p.elem;
+            match &**elem {
+                // Slice
+                syn::Type::Slice(s) => {
+                    let elem = &s.elem;
+                    match &**elem {
+                        syn::Type::Path(p) => {
+                            let segment = &p.path.segments[0];
+                            let ident = &segment.ident;
+                            quote!(Vec<#ident>)
+                        }
+                        syn::Type::Reference(p) => {
+                            let elem = &p.elem;
+                            match &**elem {
+                                syn::Type::Path(p) if p.path.segments[0].ident == "str" => quote!(Vec<String>),
+                                syn::Type::Path(_) => panic!("Only slices of &[&str] supported"),
+                                _ => panic!("Type not covered"),
+                            }
+                        }
+                        _ => panic!("Type not covered"),
+                    }
+                }
+                // or Path
+                syn::Type::Path(s) => {
+                    let segment = &s.path.segments[0];
+                    let ident = &segment.ident;
+                    if ident == "str" {
+                        quote!(String)
+                    } else {
+                        quote!(#ident)
+                    }
+                }
+                _ => panic!("Type not covered"),
+            }
+        }
+        _ => panic!("Type not covered"),
+    };
+    quote!(
+        let #arg_name = std::convert::TryInto::<#owned_type>::try_into(&#arg_name)?;
+        log::trace!("{}:[{:?}]",stringify!(#arg_name),#arg_name);
+    )
+}
+
+/// Statements borrowing the owned value produced by `owned_conversion` as the reference type `ty`.
+/// For optional arguments the owned value is wrapped in an Option
+fn reference_conversion(arg_name: &proc_macro2::TokenStream, ty: &syn::Type, optional: bool) -> proc_macro2::TokenStream {
+    match ty {
+        syn::Type::Path(_) => quote!(),
+        syn::Type::Reference(p) => {
+            let elem = &p.elem;
+            match &**elem {
+                // Slice
+                syn::Type::Slice(s) => {
+                    let elem = &s.elem;
+                    match &**elem {
+                        syn::Type::Path(_) if optional => quote!( let #arg_name = #arg_name.as_deref(); ),
+                        syn::Type::Path(_) => quote!( let #arg_name = #arg_name.as_slice(); ),
+                        // &[&str] needs an intermediate Vec<&str> borrowing the Vec<String>
+                        syn::Type::Reference(_) if optional => quote!(
+                            let #arg_name = #arg_name.as_ref().map(|v| v.iter().map(String::as_str).collect::<Vec<_>>());
+                            let #arg_name = #arg_name.as_deref();
+                        ),
+                        syn::Type::Reference(_) => quote!(
+                            let #arg_name = #arg_name.iter().map(String::as_str).collect::<Vec<_>>();
+                            let #arg_name = #arg_name.as_slice();
+                        ),
+                        _ => panic!("Type not covered"),
+                    }
+                }
+                // or Path
+                syn::Type::Path(s) if s.path.segments[0].ident == "str" => {
+                    if optional {
+                        quote!( let #arg_name = #arg_name.as_deref(); )
+                    } else {
+                        quote!( let #arg_name = #arg_name.as_str(); )
+                    }
+                }
+                syn::Type::Path(_) => quote!(),
+                _ => panic!("Type not covered"),
+            }
+        }
+        _ => panic!("Type not covered"),
+    }
 }

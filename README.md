@@ -139,6 +139,21 @@ where the second parameter is the number of columns. This allows Excel to handle
 
 I was thinking of making the input `&[]` arrays also be a tuple if there is demand for it.
 
+## Optional arguments
+
+The trailing arguments of a function can be wrapped in `Option<T>`, where `T` is any supported argument type
+(`f64`, `i32`, `bool`, `String`, `&str`, `&[f64]`, `&[&str]`, `Vec<T>`, `Array2<T>`). If the argument is omitted
+in Excel, or refers to an empty cell, the function receives `None`. Optional arguments are shown as `[name]` in
+the function wizard. A required argument after an optional one is a compile error.
+
+    /// Joins the codes using a divider
+    /// * set - codes to join
+    /// * divider - defaults to " "
+    #[xl_func()]
+    fn join(set: Vec<String>, divider: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
+        Ok(set.join(divider.unwrap_or(" ")))
+    }
+
 Arguments are taken as LPXLOPER12 args which are then coerced to the Rust types. Errors in coercion are reported via a trace!() log. If you run Excel from the command line with env-logger or simplelog you could output these to a file for debugging.
 
 ## Documentation
