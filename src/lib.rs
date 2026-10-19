@@ -5,7 +5,6 @@ use syn::{FnArg, ItemFn};
 
 
 
-
 #[proc_macro_attribute]
 pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
     // println!("{:?}", attr);
@@ -310,9 +309,9 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                                                                         match path {
                                                                             syn::Type::Path(p) => {
                                                                                 if p.path.segments[0].ident == "String" {
-                                                                                    quote! {Ok(Variant::from(&(res.0.iter().map(AsRef::as_ref).collect::<Vec<_>>().as_slice(),res.1)))}
+                                                                                    quote! {Ok(xladd::variant::Variant::from(&(res.0.iter().map(AsRef::as_ref).collect::<Vec<_>>().as_slice(),res.1)))}
                                                                                 } else {
-                                                                                    quote! {Ok(Variant::from(&(res.0.as_slice(),res.1)))}
+                                                                                    quote! {Ok(xladd::variant::Variant::from(&(res.0.as_slice(),res.1)))}
                                                                                 }
                                                                             },
                                                                             _ => panic!("Expected a type of f64,u32,bool,String")
@@ -324,13 +323,13 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                                                                 }
                                                             },
                                                                 syn::PathArguments::Parenthesized(_) => {
-                                                                    quote! {Ok(Variant::from(true))}
+                                                                    quote! {Ok(xladd::variant::Variant::from(true))}
                                                                 },
                                                                 syn::PathArguments::None => panic!("Unhandled type for result0"),
                                                         }
 //                                                        quote! {Ok(Variant::from(&(res.0.as_slice(),res.1)))}
                                                     } else {
-                                                        quote! {Ok(Variant::from(res))}
+                                                        quote! {Ok(xladd::variant::Variant::from(res))}
                                                     }        
                                                 },
                                                 _ => panic!("Tuple returned must of <Vec<f64>,Dimension(usize)>")
@@ -338,7 +337,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                                             }
                                         }
                                         syn::Type::Path(_) => {
-                                            quote! {Ok(Variant::from(res))}
+                                            quote! {Ok(xladd::variant::Variant::from(res))}
                                         },
                                         _ => panic!("XL functions must return a basic type of f64,i64,u32,i32,bool or a tuple of (Vec<f64>,Dimension(usize))")
                                     },
@@ -346,7 +345,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                                 }
                             }
                             syn::PathArguments::Parenthesized(_) => {
-                                quote! {Ok(Variant::from(true))}
+                                quote! {Ok(xladd::variant::Variant::from(true))}
                             }
                             syn::PathArguments::None => quote! {} //panic!("XL functions must return a basic type of f64,i64,u32,i32,bool or a tuple of (Vec<f64>,Dimension(usize))")
 
@@ -362,7 +361,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
     // Now collate
     let lpx_oper_args = typed_args
         .clone()
-        .map(|(name, _)| quote!(#name: LPXLOPER12))
+        .map(|(name, _)| quote!(#name: xladd::xlcall::LPXLOPER12))
         .collect::<Vec<_>>();
     let variant_args = typed_args
         .clone()
@@ -412,7 +411,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
     if async_function {
         let wrapper = quote! {
              // Error handler
-             fn #error_handler_function(#(#variant_args),*, return_handle: LPXLOPER12) -> Result<Variant, Box<dyn std::error::Error>> {
+             fn #error_handler_function(#(#variant_args),*, return_handle: xladd::xlcall::LPXLOPER12) -> Result<xladd::variant::Variant, Box<dyn std::error::Error>> {
                 log::trace!("{} called [*ASYNC*] ..waiting for results",stringify!(#xl_function));
                 #(#convert_to_owned_rust_types)*;
                 let raw_ptr = xladd::variant::XLOPERPtr(return_handle);
@@ -436,8 +435,8 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                 Ok(Variant::default())
             }
             // Excel function
-            #[no_mangle]
-            pub extern "stdcall" fn #xl_function(#(#lpx_oper_args),* ,return_handle: LPXLOPER12) {
+            #[unsafe(no_mangle)]
+            extern "stdcall" fn #xl_function(#(#lpx_oper_args),* ,return_handle: xladd::xlcall::LPXLOPER12) {
                 #(#to_variant)*
                 match #error_handler_function(#(#caller_args),*, return_handle) {
                     Ok(_) => (),
@@ -461,6 +460,7 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
         wrapper.into()
     } else {
         let wrapper = quote! {
+
             // Error handler
             fn #error_handler_function(#(#variant_args),*) -> Result<xladd::variant::Variant, Box<dyn std::error::Error>> {
                 log::trace!("{} called",stringify!(#xl_function));
@@ -480,14 +480,14 @@ pub fn xl_func(attr: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
             // Excel function
-            #[no_mangle]
-            pub extern "stdcall" fn #xl_function(#(#lpx_oper_args),*)  -> LPXLOPER12 {
+            #[unsafe(no_mangle)]
+            extern "stdcall" fn #xl_function(#(#lpx_oper_args),*)  -> xladd::xlcall::LPXLOPER12 {
                 #(#to_variant)*
                 match #error_handler_function(#(#caller_args),*) {
-                    Ok(v) => LPXLOPER12::from(v),
+                    Ok(v) => xladd::xlcall::LPXLOPER12::from(v),
                     Err(e) => {
                         log::error!("{}",e.to_string());
-                        LPXLOPER12::from(xladd::variant::Variant::from(e.to_string().as_str()))
+                        xladd::xlcall::LPXLOPER12::from(xladd::variant::Variant::from(e.to_string().as_str()))
                     },
                 }
             }
